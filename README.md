@@ -16,6 +16,17 @@ Most endpoints require an `x-api-key` header matching the `PAYMENT_PROXY_SECRET`
 |---|---|
 | `GET /api/weather` | Returns mock weather data |
 | `GET /api/funfact` | Returns a random fun fact |
+| `POST /api/translate` | Translates text to a target language via Claude |
+
+### `POST /api/translate`
+
+```json
+// Request body
+{ "text": "Hello, world!", "targetLanguage": "Spanish" }
+
+// Response
+{ "translation": "¡Hola, mundo!", "targetLanguage": "Spanish" }
+```
 
 ## Running locally
 
