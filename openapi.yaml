@@ -1,0 +1,123 @@
+openapi: 3.1.0
+info:
+  title: Everyday APIs
+  description: Example API endpoints for testing Machine Payments use cases.
+  version: 0.1.0
+servers:
+  - url: https://everday-apis.vercel.app/api
+    description: Production
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+security:
+  - ApiKeyAuth: []
+paths:
+  /weather:
+    get:
+      summary: Get mock weather data
+      operationId: getWeather
+      responses:
+        '200':
+          description: Current weather
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  location:
+                    type: string
+                    example: San Francisco, CA
+                  temperature:
+                    type: integer
+                    example: 62
+                  unit:
+                    type: string
+                    example: F
+                  condition:
+                    type: string
+                    example: Partly cloudy
+                  humidity:
+                    type: string
+                    example: 72%
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /funfact:
+    get:
+      summary: Get a random fun fact
+      operationId: getFunFact
+      responses:
+        '200':
+          description: A fun fact
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  fact:
+                    type: string
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /translate:
+    post:
+      summary: Translate text to a target language
+      operationId: translate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+                  description: The text to translate
+                  example: Hello, world!
+                targetLanguage:
+                  type: string
+                  description: The language to translate into
+                  example: Spanish
+              required: [text, targetLanguage]
+      responses:
+        '200':
+          description: Translated text
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  translation:
+                    type: string
+                    example: ¡Hola, mundo!
+                  targetLanguage:
+                    type: string
+                    example: Spanish
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
