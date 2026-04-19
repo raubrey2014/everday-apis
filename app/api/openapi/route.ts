@@ -25,6 +25,9 @@ const spec = {
       },
     },
   },
+  servers: [
+    { url: 'https://everday-apis.vercel.app', description: 'Production' },
+  ],
   security: [{ ApiKeyAuth: [] }],
   paths: {
     '/api/weather': {
