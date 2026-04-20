@@ -7,6 +7,12 @@ const SYSTEM_PROMPT =
   'You are a professional translator. Translate the user-provided text to the requested target language. ' +
   'Respond with only the translated text — no explanations, no labels, no extra commentary.'
 
+function logRequestHeaders(request: NextRequest) {
+  const headers: Record<string, string> = {}
+  request.headers.forEach((value, key) => { headers[key] = value })
+  console.log('[translate] request headers:', JSON.stringify(headers, null, 2))
+}
+
 function checkApiKey(request: NextRequest): Response | null {
   const key = request.headers.get('x-api-key')
   if (!key || key !== process.env.PAYMENT_PROXY_SECRET) {
@@ -16,6 +22,7 @@ function checkApiKey(request: NextRequest): Response | null {
 }
 
 export async function POST(request: NextRequest) {
+  logRequestHeaders(request)
   const authError = checkApiKey(request)
   if (authError) return authError
 

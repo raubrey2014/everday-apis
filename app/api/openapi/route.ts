@@ -67,20 +67,33 @@ const spec = {
     },
     '/api/funfact': {
       get: {
-        summary: 'Get a random fun fact',
-        description: 'Returns a randomly selected fun fact.',
+        summary: 'Get random fun facts',
+        description: 'Returns an array of randomly selected fun facts. Defaults to 1, max 10.',
         operationId: 'getFunFact',
+        parameters: [
+          {
+            name: 'count',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 10, default: 1 },
+            description: 'Number of fun facts to return (1–10).',
+          },
+        ],
         responses: {
           '200': {
-            description: 'A fun fact',
+            description: 'An array of fun facts',
             content: {
               'application/json': {
                 schema: {
                   type: 'object',
                   properties: {
-                    fact: { type: 'string', example: 'Honey never spoils.' },
+                    facts: {
+                      type: 'array',
+                      items: { type: 'string' },
+                      example: ['Honey never spoils.'],
+                    },
                   },
-                  required: ['fact'],
+                  required: ['facts'],
                 },
               },
             },
