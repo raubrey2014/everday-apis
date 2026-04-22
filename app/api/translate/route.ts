@@ -42,6 +42,9 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: '`targetLanguage` is required' }, { status: 400 })
   }
 
+  const wordCount = text.trim().split(/\s+/).filter(Boolean).length
+  const captureAmount = (wordCount * 0.01).toFixed(2)
+
   const stream = client.messages.stream({
     model: 'claude-opus-4-7',
     max_tokens: 4096,
@@ -64,5 +67,7 @@ export async function POST(request: NextRequest) {
   const translationBlock = message.content.find((b) => b.type === 'text')
   const translation = translationBlock?.type === 'text' ? translationBlock.text : ''
 
-  return Response.json({ translation, targetLanguage })
+  return Response.json({ translation, targetLanguage }, {
+    headers: { 'X-Capture-Amount': captureAmount },
+  })
 }

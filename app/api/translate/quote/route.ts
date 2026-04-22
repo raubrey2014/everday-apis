@@ -1,6 +1,5 @@
 import type { NextRequest } from 'next/server'
 
-// Non-Latin-script languages that cost more to translate
 const PREMIUM_LANGUAGES = new Set([
   'japanese', 'chinese', 'chinese simplified', 'chinese traditional',
   'mandarin', 'cantonese', 'korean', 'arabic', 'hebrew', 'thai',
@@ -31,7 +30,9 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: '`targetLanguage` is required' }, { status: 400 })
   }
 
-  const amount = isPremium(targetLanguage) ? 10 : 5
+  const wordCount = text.trim().split(/\s+/).filter(Boolean).length
+  const ratePerWord = isPremium(targetLanguage) ? 0.02 : 0.01
+  const upto = parseFloat((wordCount * ratePerWord).toFixed(2))
 
-  return Response.json({ amount, currency: 'USDC', decimals: 2 })
+  return Response.json({ upto, currency: 'USDC', decimals: 2 })
 }
