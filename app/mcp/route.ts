@@ -1,17 +1,21 @@
 import type { NextRequest } from 'next/server'
 import { McpServer, WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import { validateAttestationComponents } from '@/lib/attestation'
+import { validateAttestationToken } from '@/lib/attestation'
 
 // Stateless: create a fresh server per request so tool closures can capture
 // per-request attestation headers without shared mutable state.
 export async function POST(request: NextRequest) {
-  const components = {
-    authenticator: request.headers.get('x-human-attestation'),
-    prepared: request.headers.get('x-human-attestation-prepared'),
-    keyId: request.headers.get('x-human-attestation-key-id'),
-    issuerUrl: request.headers.get('x-human-attestation-issuer'),
-  }
+  const authorization = request.headers.get('authorization')
+  const signatureInput = request.headers.get('signature-input')
+  const signature = request.headers.get('signature')
+  const agentKey = request.headers.get('agent-key')
+
+  console.log('[mcp] incoming request headers:')
+  console.log('  authorization:   ', authorization ?? '(none)')
+  console.log('  signature-input: ', signatureInput ?? '(none)')
+  console.log('  signature:       ', signature ?? '(none)')
+  console.log('  agent-key:       ', agentKey ?? '(none)')
 
   const server = new McpServer({ name: 'machine-cuts', version: '1.0.0' })
 
@@ -57,7 +61,7 @@ export async function POST(request: NextRequest) {
     'book_haircut_appointment',
     {
       title: 'Book Haircut Appointment',
-      description: 'Books a haircut at Machine Cuts in Boston. Requires a Privacy Pass attestation token supplied via X-Human-Attestation headers.',
+      description: 'Books a haircut at Machine Cuts in Boston. Requires a Privacy Pass attestation token in the Authorization: PrivateToken header.',
       inputSchema: z.object({
         locationId: z.string().describe('Location ID from get_haircut_locations'),
         slotTime: z.string().describe('ISO 8601 time slot from get_haircut_locations'),
@@ -65,12 +69,14 @@ export async function POST(request: NextRequest) {
       }),
     },
     async ({ locationId, slotTime, name }) => {
-      const valid = await validateAttestationComponents(components)
+      console.log('[mcp] book_haircut_appointment called, validating attestation token')
+      const valid = await validateAttestationToken(authorization)
+      console.log('[mcp] attestation valid:', valid)
       if (!valid) {
         return {
           content: [{
             type: 'text' as const,
-            text: 'Booking failed: valid attestation token required. Ensure X-Human-Attestation headers are set when connecting to this MCP server.',
+            text: 'Booking failed: valid attestation token required. Ensure Authorization: PrivateToken token=<...> is set when connecting to this MCP server.',
           }],
           isError: true,
         }

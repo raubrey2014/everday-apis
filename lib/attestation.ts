@@ -86,12 +86,16 @@ async function fetchIssuerKey(tokenKeyId: Buffer): Promise<Buffer> {
   throw new Error('No matching issuer key for token_key_id')
 }
 
-export async function validateAttestationToken(header: string | null): Promise<boolean> {
-  if (!header) return false
+export async function validateAttestationToken(authHeader: string | null): Promise<boolean> {
+  if (!authHeader) return false
+
+  // Parse Authorization: PrivateToken token=<base64url>
+  const match = authHeader.match(/^PrivateToken\s+token=([A-Za-z0-9_-]+)$/)
+  if (!match) return false
 
   let buf: Buffer
   try {
-    buf = Buffer.from(header, 'base64')
+    buf = Buffer.from(match[1], 'base64url')
   } catch {
     return false
   }
