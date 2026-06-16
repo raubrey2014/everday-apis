@@ -186,23 +186,6 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Why attestation callout */}
-        <div className="mb-8 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/20 p-4">
-          <div className="flex gap-2.5">
-            <span className="text-amber-500 mt-0.5 text-sm flex-shrink-0">⚡</span>
-            <div>
-              <p className="text-sm font-medium text-amber-900 dark:text-amber-200 mb-1">
-                Why CAPTCHA for an API?
-              </p>
-              <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
-                AI agents can discover and call this API directly — but booking requires an
-                attestation token proving a human completed verification. Agents that can&apos;t
-                obtain one get blocked at the API layer, not the UI layer.
-              </p>
-            </div>
-          </div>
-        </div>
-
         {/* Booking card */}
         {loadingLocations ? (
           <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 p-6 animate-pulse">
