@@ -2,6 +2,7 @@ import type { NextRequest } from 'next/server'
 import { McpServer, WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { validateAttestationToken } from '@/lib/attestation'
+import { decryptAgentIdentityToken } from '@/lib/agent-identity'
 
 // Stateless: create a fresh server per request so tool closures can capture
 // per-request attestation headers without shared mutable state.
@@ -10,12 +11,14 @@ export async function POST(request: NextRequest) {
   const signatureInput = request.headers.get('signature-input')
   const signature = request.headers.get('signature')
   const agentKey = request.headers.get('agent-key')
+  const agentIdentityToken = request.headers.get('x-agent-identity-token')
 
   console.log('[mcp] incoming request headers:')
-  console.log('  authorization:   ', authorization ?? '(none)')
-  console.log('  signature-input: ', signatureInput ?? '(none)')
-  console.log('  signature:       ', signature ?? '(none)')
-  console.log('  agent-key:       ', agentKey ?? '(none)')
+  console.log('  authorization:          ', authorization ?? '(none)')
+  console.log('  signature-input:        ', signatureInput ?? '(none)')
+  console.log('  signature:              ', signature ?? '(none)')
+  console.log('  agent-key:              ', agentKey ?? '(none)')
+  console.log('  x-agent-identity-token: ', agentIdentityToken ? '(present)' : '(none)')
 
   const server = new McpServer({ name: 'machine-cuts', version: '1.0.0' })
 
@@ -98,6 +101,76 @@ export async function POST(request: NextRequest) {
             location: 'Machine Cuts, 123 Newbury St, Boston, MA',
             appointmentTime: slotTime,
             name: name ?? 'Guest',
+            message: 'Your appointment has been confirmed!',
+          }, null, 2),
+        }],
+      }
+    },
+  )
+
+  server.registerTool(
+    'book_haircut_appointment_with_identity',
+    {
+      title: 'Book Haircut Appointment (Agent Identity)',
+      description: [
+        'Books a haircut at Machine Cuts requiring two tokens:',
+        '1. Privacy Pass attestation in Authorization: PrivateToken header (proves the caller is a legitimate agent)',
+        '2. Agent identity JWE in x-agent-identity-token header (proves who the agent is)',
+        'To create the identity token: fetch the RSA public key from /.well-known/agent-identity-keys,',
+        'then encrypt {"name":"...","email":"..."} as a JWE compact token (RSA-OAEP-256 + A256GCM).',
+        'A demo token can be minted via POST /api/haircut/agent-identity-token.',
+      ].join(' '),
+      inputSchema: z.object({
+        locationId: z.string().describe('Location ID from get_haircut_locations'),
+        slotTime: z.string().describe('ISO 8601 time slot from get_haircut_locations'),
+      }),
+    },
+    async ({ locationId, slotTime }) => {
+      const attestationValid = await validateAttestationToken(authorization)
+      if (!attestationValid) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: 'Booking failed: valid Privacy Pass attestation token required. Set Authorization: PrivateToken token=<...> when connecting to this MCP server.',
+          }],
+          isError: true,
+        }
+      }
+
+      const claims = decryptAgentIdentityToken(agentIdentityToken)
+      if (!claims) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: [
+              'Booking failed: valid agent identity token required.',
+              'Fetch the RSA-OAEP-256 public key from /.well-known/agent-identity-keys,',
+              'encrypt {"name":"...","email":"..."} as a JWE compact token (alg: RSA-OAEP-256, enc: A256GCM),',
+              'and pass it in the x-agent-identity-token header.',
+              'For a demo token call POST /api/haircut/agent-identity-token with {"name":"...","email":"..."}.',
+            ].join(' '),
+          }],
+          isError: true,
+        }
+      }
+
+      if (!locationId || !slotTime) {
+        return {
+          content: [{ type: 'text' as const, text: 'Booking failed: locationId and slotTime are required.' }],
+          isError: true,
+        }
+      }
+
+      const confirmationId = `MCUT-${Math.floor(100000 + Math.random() * 900000)}`
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            confirmationId,
+            location: 'Machine Cuts, 123 Newbury St, Boston, MA',
+            appointmentTime: slotTime,
+            name: claims.name,
+            email: claims.email,
             message: 'Your appointment has been confirmed!',
           }, null, 2),
         }],
