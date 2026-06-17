@@ -2,23 +2,26 @@ import type { NextRequest } from 'next/server'
 import { McpServer, WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { validateAttestationToken } from '@/lib/attestation'
-import { decryptAgentIdentityToken } from '@/lib/agent-identity'
+import { verifyIdentityPresentation } from '@/lib/sd-jwt-verify'
+import { generateNonce, verifyNonce } from '@/lib/challenge-nonce'
+
+const SERVICE_AUD = process.env.SERVICE_AUD ?? 'https://everyday-apis.vercel.app'
 
 // Stateless: create a fresh server per request so tool closures can capture
-// per-request attestation headers without shared mutable state.
+// per-request headers without shared mutable state.
 export async function POST(request: NextRequest) {
   const authorization = request.headers.get('authorization')
   const signatureInput = request.headers.get('signature-input')
   const signature = request.headers.get('signature')
   const agentKey = request.headers.get('agent-key')
-  const agentIdentityToken = request.headers.get('x-agent-identity-token')
+  const identityPresentation = request.headers.get('identity-presentation')
 
   console.log('[mcp] incoming request headers:')
-  console.log('  authorization:          ', authorization ?? '(none)')
-  console.log('  signature-input:        ', signatureInput ?? '(none)')
-  console.log('  signature:              ', signature ?? '(none)')
-  console.log('  agent-key:              ', agentKey ?? '(none)')
-  console.log('  x-agent-identity-token: ', agentIdentityToken ? '(present)' : '(none)')
+  console.log('  authorization:           ', authorization ?? '(none)')
+  console.log('  signature-input:         ', signatureInput ?? '(none)')
+  console.log('  signature:               ', signature ?? '(none)')
+  console.log('  agent-key:               ', agentKey ?? '(none)')
+  console.log('  identity-presentation:   ', identityPresentation ? '(present)' : '(none)')
 
   const server = new McpServer({ name: 'machine-cuts', version: '1.0.0' })
 
@@ -111,44 +114,76 @@ export async function POST(request: NextRequest) {
   server.registerTool(
     'book_haircut_appointment_with_identity',
     {
-      title: 'Book Haircut Appointment (Agent Identity)',
+      title: 'Book Haircut Appointment (Verified Identity)',
       description: [
-        'Books a haircut at Machine Cuts requiring two tokens:',
-        '1. Privacy Pass attestation in Authorization: PrivateToken header (proves the caller is a legitimate agent)',
-        '2. Agent identity JWE in x-agent-identity-token header (proves who the agent is)',
-        'To create the identity token: fetch the RSA public key from /.well-known/agent-identity-keys,',
-        'then encrypt {"name":"...","email":"..."} as a JWE compact token (RSA-OAEP-256 + A256GCM).',
-        'A demo token can be minted via POST /api/haircut/agent-identity-token.',
+        'Books a haircut at Machine Cuts requiring two things:',
+        '1. Privacy Pass attestation (Authorization: PrivateToken) — proves the caller is a legitimate agent.',
+        '2. Identity presentation (Identity-Presentation header) — verified name and email from the agent\'s Identity Provider.',
+        'If the Identity-Presentation header is absent, the tool returns a urn:aap:claims-required challenge.',
+        'The agent must call the IDP claims endpoint with the challenge, then retry with the resulting token.',
       ].join(' '),
       inputSchema: z.object({
         locationId: z.string().describe('Location ID from get_haircut_locations'),
         slotTime: z.string().describe('ISO 8601 time slot from get_haircut_locations'),
+        // nonce is passed back by the agent on retry so the service can verify it
+        nonce: z.string().optional().describe('Nonce from the urn:aap:claims-required challenge (required on retry)'),
       }),
     },
-    async ({ locationId, slotTime }) => {
+    async ({ locationId, slotTime, nonce }) => {
+      // Step 1: Privacy Pass attestation
       const attestationValid = await validateAttestationToken(authorization)
       if (!attestationValid) {
         return {
           content: [{
             type: 'text' as const,
-            text: 'Booking failed: valid Privacy Pass attestation token required. Set Authorization: PrivateToken token=<...> when connecting to this MCP server.',
+            text: 'Booking failed: valid Privacy Pass attestation token required.',
           }],
           isError: true,
         }
       }
 
-      const claims = decryptAgentIdentityToken(agentIdentityToken)
+      // Step 2: Identity presentation
+      if (!identityPresentation) {
+        // Issue a fresh nonce and challenge the agent
+        const freshNonce = generateNonce()
+        const challenge = {
+          type: 'urn:aap:claims-required',
+          aud: SERVICE_AUD,
+          nonce: freshNonce,
+          claims: ['name', 'email'],
+          purpose: 'Personalise your haircut appointment confirmation',
+          formats: ['dc+sd-jwt', 'aap-claims+jwt'],
+          trusted_issuers: [process.env.ATTESTATION_ISSUER_URL ?? ''],
+        }
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(challenge, null, 2),
+          }],
+          isError: true,
+        }
+      }
+
+      // Verify the nonce passed back by the agent matches a valid challenge
+      if (!nonce || !verifyNonce(nonce)) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              error: 'Missing or expired nonce. Re-fetch the challenge by calling this tool without Identity-Presentation.',
+            }),
+          }],
+          isError: true,
+        }
+      }
+
+      // Verify the identity presentation
+      const claims = await verifyIdentityPresentation(identityPresentation, { aud: SERVICE_AUD, nonce })
       if (!claims) {
         return {
           content: [{
             type: 'text' as const,
-            text: [
-              'Booking failed: valid agent identity token required.',
-              'Fetch the RSA-OAEP-256 public key from /.well-known/agent-identity-keys,',
-              'encrypt {"name":"...","email":"..."} as a JWE compact token (alg: RSA-OAEP-256, enc: A256GCM),',
-              'and pass it in the x-agent-identity-token header.',
-              'For a demo token call POST /api/haircut/agent-identity-token with {"name":"...","email":"..."}.',
-            ].join(' '),
+            text: 'Booking failed: Identity-Presentation could not be verified. Ensure the token is a valid SD-JWT-VC or aap-claims+jwt, bound to this service and nonce.',
           }],
           isError: true,
         }
@@ -169,8 +204,8 @@ export async function POST(request: NextRequest) {
             confirmationId,
             location: 'Machine Cuts, 123 Newbury St, Boston, MA',
             appointmentTime: slotTime,
-            name: claims.name,
-            email: claims.email,
+            name: claims.name ?? 'Guest',
+            email: claims.email ?? '(not provided)',
             message: 'Your appointment has been confirmed!',
           }, null, 2),
         }],
