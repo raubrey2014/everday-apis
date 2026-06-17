@@ -127,9 +127,14 @@ export async function POST(request: NextRequest) {
         slotTime: z.string().describe('ISO 8601 time slot from get_haircut_locations'),
         // nonce is passed back by the agent on retry so the service can verify it
         nonce: z.string().optional().describe('Nonce from the urn:aap:claims-required challenge (required on retry)'),
+        // identity_presentation can be passed as a parameter when injecting it as a
+        // per-call HTTP header is not possible (e.g. when called via MCPClient)
+        identity_presentation: z.string().optional().describe('Identity presentation token from resolveIdentityClaims (SD-JWT-VC or aap-claims+jwt)'),
       }),
     },
-    async ({ locationId, slotTime, nonce }) => {
+    async ({ locationId, slotTime, nonce, identity_presentation }) => {
+      // Accept identity presentation from either the HTTP header or the tool parameter
+      const effectivePresentation = identityPresentation ?? identity_presentation ?? null
       // Step 1: Privacy Pass attestation
       const attestationValid = await validateAttestationToken(authorization)
       if (!attestationValid) {
@@ -143,7 +148,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Step 2: Identity presentation
-      if (!identityPresentation) {
+      if (!effectivePresentation) {
         // Issue a fresh nonce and challenge the agent
         const freshNonce = generateNonce()
         const challenge = {
@@ -178,7 +183,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Verify the identity presentation
-      const claims = await verifyIdentityPresentation(identityPresentation, { aud: SERVICE_AUD, nonce })
+      const claims = await verifyIdentityPresentation(effectivePresentation, { aud: SERVICE_AUD, nonce })
       if (!claims) {
         return {
           content: [{
