@@ -12,6 +12,7 @@
 // Returns the decoded claim values on success, or null on any verification failure.
 
 import crypto from 'crypto'
+import { decryptClaimsJwe } from '@/lib/service-jwk'
 
 export interface VerifyOptions {
   aud: string    // this service's own origin
@@ -162,7 +163,16 @@ async function verifyAapClaimsJwt(
   opts: VerifyOptions,
   issuerUrl: string,
 ): Promise<Record<string, unknown> | null> {
-  const parsed = splitJwt(token)
+  // Compact JWE has 5 dot-separated parts; compact JWT has 3.
+  let jwtString = token
+  if (token.split('.').length === 5) {
+    try {
+      jwtString = await decryptClaimsJwe(token)
+    } catch {
+      return null
+    }
+  }
+  const parsed = splitJwt(jwtString)
   if (!parsed) return null
   if (parsed.header.typ !== 'aap-claims+jwt') return null
 

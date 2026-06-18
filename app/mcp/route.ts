@@ -16,7 +16,13 @@ export async function POST(request: NextRequest) {
   const agentKey = request.headers.get('agent-key')
   const identityPresentation = request.headers.get('identity-presentation')
 
-  console.log('[mcp] incoming request headers:')
+  let toolName: string | undefined
+  try {
+    const body = await request.clone().json() as { method?: string; params?: { name?: string } }
+    if (body.method === 'tools/call') toolName = body.params?.name
+  } catch { /* not a JSON-RPC tool call */ }
+
+  console.log('[mcp] incoming request headers:', toolName ? `(tool: ${toolName})` : '')
   console.log('  authorization:           ', authorization ?? '(none)')
   console.log('  signature-input:         ', signatureInput ?? '(none)')
   console.log('  signature:               ', signature ?? '(none)')
